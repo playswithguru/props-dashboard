@@ -209,34 +209,30 @@ export default function PropsDashboard() {
         ))}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "0.75rem", marginBottom: "1.5rem" }}>
-        <select value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)} style={{ padding: "0.5rem", width: "100%" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
+        <select value={selectedGame} onChange={(e) => setSelectedGame(e.target.value)} style={{ padding: "0.5rem" }}>
           <option value="">All Games</option>
           {uniqueGames.map(game => (
             <option key={game} value={game}>{game}</option>
           ))}
         </select>
-
         <input
           type="text"
           placeholder="Search Player"
           value={playerInput}
           onChange={(e) => setPlayerInput(e.target.value)}
-          style={{ padding: "0.5rem", width: "100%" }}
+          style={{ padding: "0.5rem", width: "200px" }}
         />
-
-        <select value={selectedPropType} onChange={(e) => setSelectedPropType(e.target.value)} style={{ padding: "0.5rem", width: "100%" }}>
+        <select value={selectedPropType} onChange={(e) => setSelectedPropType(e.target.value)} style={{ padding: "0.5rem" }}>
           <option value="">All Prop Types</option>
           {uniquePropTypes.map(pt => (
             <option key={pt} value={pt}>{pt}</option>
           ))}
         </select>
-
-        <button onClick={() => setShowLineupSection(prev => !prev)} style={{ padding: "0.5rem 1rem", width: "100%" }}>
+        <button onClick={() => setShowLineupSection(prev => !prev)} style={{ padding: "0.5rem 1rem" }}>
           {showLineupSection ? "Hide Lineup Generator" : "Show Lineup Generator"}
         </button>
       </div>
-
 
       {showLineupSection && (
         <div style={{ marginBottom: "2rem" }}>
