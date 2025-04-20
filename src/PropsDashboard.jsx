@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
-import LineupGeneratorPanel from "./LineupGeneratorPanel";
-import { GoogleLogin, googleLogout, useGoogleLogin } from '@react-oauth/google';
+import React, { useState, useEffect } from 'react';
+import { GoogleLogin } from '@react-oauth/google';
+import { jwtDecode } from 'jwt-decode';
+import LineupGeneratorPanel from './LineupGeneratorPanel';
+import { googleLogout } from '@react-oauth/google';
 
-import axios from 'axios';
 
 const teamAbbrMap = {
   "Chicago Bulls": "CHI",
@@ -51,17 +52,16 @@ export default function PropsDashboard() {
     fetchProps();
   }, []);
 
-  const login = async (tokenResponse) => {
+  const login = async (jwt) => {
     try {
-      const res = await axios.get("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
-      });
-      setUser(res.data);
-      localStorage.setItem("userInfo", JSON.stringify(res.data));
+      const decodedUser = jwtDecode(jwt);
+      setUser(decodedUser);
+      localStorage.setItem("userInfo", JSON.stringify(decodedUser));
     } catch (err) {
       console.error("Google login failed", err);
     }
   };
+  
 
   const logout = () => {
     googleLogout();
@@ -146,10 +146,24 @@ export default function PropsDashboard() {
     return (
       <div style={{ padding: "2rem", textAlign: "center" }}>
         <h2>Please sign in with Google to access PlaysWithGuru</h2>
-        <button onClick={login} style={{ padding: "0.6rem 1.5rem", fontSize: "1rem", backgroundColor: "#4285F4", color: "white", border: "none", borderRadius: "6px" }}>Sign in with Google</button>
+          <GoogleLogin
+            onSuccess={(credentialResponse) => {
+              const userInfo = jwtDecode(credentialResponse.credential);
+              setUser(userInfo);
+              localStorage.setItem("userInfo", JSON.stringify(userInfo));
+            }}
+            onError={() => {
+              console.log("Login Failed");
+            }}
+            useOneTap={false} // disable the one-tap version
+            theme="filled_blue"
+            size="large"
+            text="signin_with"
+          />
       </div>
     );
-  }
+  }  
+  
 
   return (
     <div style={{ padding: "2rem", fontFamily: "Arial, sans-serif", minHeight: "100vh", ...themeStyles }}>
