@@ -289,13 +289,12 @@ export default function PropsDashboard() {
   }
 
   try {
-    const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
-    const res = await fetch(`/api${endpoint}`);
-    //fetch("https://playswithguru.com/api/props") // or your correct Flask API endpoint
-
+    const endpoint = sport === "MLB" ? "/api/mlb-props" : "/api/props";
+    const res = await fetch(`${endpoint}`); // ✅ Ensures HTTPS relative fetch
     const data = await res.json();
     const cleaned = Array.isArray(data) ? data : [];
     setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
+  
     setTimeout(() => {
       setPropsData(cleaned);
       setLoading(false);
@@ -305,6 +304,7 @@ export default function PropsDashboard() {
     setPropsData([]);
     setLoading(false);
   }
+  
 };
 
 
