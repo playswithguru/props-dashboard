@@ -1,0 +1,2 @@
+FLASK_APP=flask_app.py
+FLASK_RUN_PORT=5050

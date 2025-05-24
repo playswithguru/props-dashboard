@@ -1,104 +1,69 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 
-const teamAbbrMap = {
-  "Chicago Bulls": "CHI",
-  "Miami Heat": "MIA",
-  "Dallas Mavericks": "DAL",
-  "Sacramento Kings": "SAC"
+const tagColorMap = {
+  "MEGA SMASH": "#0095e0",
+  "SMASH": "#2e7d32",
+  "GOOD": "#f9a825",
+  "LEAN": "#8e24aa",
+  "FADE/UNDER": "#d32f2f"
 };
 
 const LineupGeneratorPanel = ({
-  onGenerate,
   mixType,
   setMixType,
   maxLineups,
   setMaxLineups,
-  lineupResults,
+  lineupResults = [],
+  setLineupResults,
   darkMode,
   homeAwayFilter,
-  setHomeAwayFilter
+  setHomeAwayFilter,
+  lineupGameFilter,
+  setLineupGameFilter,
+  lineupTagFilter,
+  setLineupTagFilter,
+  allTags = [],
+  allGames = [],
+  filterGames,
+  showGenerator = true,
+  handleLineupGenerate,
+  activeSport,
 }) => {
   const [searchPlayer, setSearchPlayer] = useState("");
-  const handleSubmit = () => {
-    onGenerate({
-      mixType,
-      maxLineups: parseInt(maxLineups, 10),
-      homeAway: homeAwayFilter
-    });
-  };
-
-  const tagColorMap = {
-    "MEGA SMASH": "#0095e0",
-    "SMASH": "#2e7d32",
-    "GOOD": "#f9a825",
-    "LEAN": "#8e24aa",
-    "FADE/UNDER": "#d32f2f"
-  };
-
-  const tagEmojiMap = {
-    "MEGA SMASH": "💥",
-    "SMASH": "✅",
-    "GOOD": "⚠️",
-    "LEAN": "🔣",
-    "FADE/UNDER": "❌"
-  };
-
-  const getDominantTag = (lineup) => {
-    const tagCount = {};
-    lineup.forEach(p => {
-      tagCount[p.Tag] = (tagCount[p.Tag] || 0) + 1;
-    });
-    return Object.entries(tagCount).sort((a, b) => b[1] - a[1])[0]?.[0];
-  };
-
-  const getTagSummary = (lineup) => {
-    const count = {};
-    lineup.forEach(p => {
-      const emoji = tagEmojiMap[p.Tag];
-      if (emoji) {
-        count[emoji] = (count[emoji] || 0) + 1;
-      }
-    });
-    return Object.entries(count).map(([emoji, n]) => `${emoji} x${n}`).join("   ");
-  };
-
-  const getConfidenceDotStyle = (tag, confidence) => {
-    const baseColor = tagColorMap[tag] || "#999";
-    const opacity = Math.min(confidence / 5, 1);
-    return {
-      width: "10px",
-      height: "10px",
-      borderRadius: "50%",
-      backgroundColor: baseColor,
-      opacity,
-      display: "inline-block"
-    };
-  };
-
-  const getConfidenceTier = (confidence) => {
-    if (confidence >= 4.5) return "Elite";
-    if (confidence >= 3.5) return "Strong";
-    if (confidence >= 2.5) return "Moderate";
-    return "Low";
-  };
-
+  const [confidenceFilter, setConfidenceFilter] = useState("");
+  const [activeTab, setActiveTab] = useState("PRIZEPICKS");
+  const tags = allTags || [];
+  const games = allGames || [];
   const lineupRefs = useRef([]);
+
+  const handleSubmit = () => {
+    if (typeof handleLineupGenerate === 'function') {
+      handleLineupGenerate({
+        mixType,
+        maxLineups: parseInt(maxLineups, 10),
+        homeAway: homeAwayFilter,
+        filterGames: lineupGameFilter,
+        filterTags: lineupTagFilter,
+        confidence: confidenceFilter
+      });
+    }
+  };
 
   const handleExportPDF = async () => {
     const doc = new jsPDF();
     const pdfWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    const cardWidth = (pdfWidth - 30) / 2;
+    const cardWidth = (pdfWidth - 40) / 2;
     const margin = 10;
     let x = margin;
     let y = margin;
 
     for (let i = 0; i < lineupRefs.current.length; i++) {
       const ref = lineupRefs.current[i];
-      if (ref?.current) {
-        const canvas = await html2canvas(ref.current);
+      if (ref) {
+        const canvas = await html2canvas(ref);
         const imgData = canvas.toDataURL("image/png");
         const imgProps = doc.getImageProperties(imgData);
         const ratio = cardWidth / imgProps.width;
@@ -124,91 +89,119 @@ const LineupGeneratorPanel = ({
   };
 
   return (
-    <div style={{ marginBottom: "2rem" }}>
-      <h2 style={{ fontSize: "1.25rem", marginBottom: "1rem" }}>📊 Lineup Generator</h2>
+    <div className="max-w-4xl mx-auto p-4">
+      {showGenerator && (
+        <div className="border border-gray-300 rounded-2xl p-6 mb-6 shadow-lg bg-white">
+          <div className="flex gap-4 border-b pb-3 mb-6">
+            {['PRIZEPICKS', 'DRAFTKINGS', 'FANDUEL', 'MULTISPORT'].map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 font-semibold rounded-t-md transition-colors duration-200 ${activeTab === tab ? 'bg-blue-100 text-blue-700 border-b-2 border-blue-600' : 'text-gray-500 hover:text-blue-600'}`}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-      <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "center", marginBottom: "1rem" }}>
-        <div>
-          <label>Mix Type:</label><br />
-          <select value={mixType} onChange={(e) => setMixType(e.target.value)}>
-            <option value="6_OVER">6 Over</option>
-            <option value="5_OVER_1_UNDER">5 Over 1 Under</option>
-            <option value="4_OVER_2_UNDER">4 Over 2 Under</option>
-            <option value="3_OVER_3_UNDER">3 Over 3 Under</option>
-            <option value="2_OVER_4_UNDER">2 Over 4 Under</option>
-            <option value="1_OVER_5_UNDER">1 Over 5 Under</option>
-            <option value="6_UNDER">6 Under</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Max Lineups:</label><br />
-          <input type="number" value={maxLineups} onChange={(e) => setMaxLineups(e.target.value)} min={1} style={{ width: "60px" }} />
-        </div>
-
-        <div>
-          <label>Home/Away:</label><br />
-          <select value={homeAwayFilter} onChange={(e) => setHomeAwayFilter(e.target.value)}>
-            <option value="">All</option>
-            <option value="home">Home Only</option>
-            <option value="away">Away Only</option>
-          </select>
-        </div>
-
-        <div>
-          <label>Search Player:</label><br />
-          <input
-            type="text"
-            placeholder="e.g. Zach Lavine"
-            value={searchPlayer}
-            onChange={(e) => setSearchPlayer(e.target.value)}
-            style={{ width: "160px" }}
-          />
-        </div>
-
-        <button onClick={handleSubmit} style={{ padding: "0.5rem 1rem", backgroundColor: "#007bff", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", height: "40px", marginTop: "1.2rem" }}>🚀 Generate Lineups</button>
-
-        {lineupResults?.length > 0 && (
-          <button onClick={handleExportPDF} style={{ padding: "0.5rem 1rem", backgroundColor: "#4caf50", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", height: "40px", marginTop: "1.2rem" }}>📄 Export to PDF</button>
-        )}
-      </div>
-
-      {lineupResults?.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "1.5rem", marginTop: "2rem" }}>
-          {lineupResults.map((lineup, i) => {
-            const playerNames = lineup.map(p => p.Player.toLowerCase());
-            if (searchPlayer && !playerNames.some(name => name.includes(searchPlayer.toLowerCase()))) return null;
-
-            const dominantTag = getDominantTag(lineup);
-            const tagSummary = getTagSummary(lineup);
-            const cardBorderColor = tagColorMap[dominantTag] || "#ccc";
-            if (!lineupRefs.current[i]) lineupRefs.current[i] = React.createRef();
-
-            return (
-              <div key={i} ref={lineupRefs.current[i]} style={{ position: "relative", borderLeft: `4px solid ${cardBorderColor}` , borderRadius: "16px", padding: "1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.1)", backgroundColor: darkMode ? "#2c2c2c" : "#fff", color: darkMode ? "#f0f0f0" : "#000", transition: "all 0.3s ease" }}>
-               <h3 style={{ marginBottom: "0.5rem", fontSize: "1.1rem" }}>Lineup {i + 1}</h3>
-                <div style={{ fontSize: "0.85rem", marginBottom: "0.8rem", color: "#aaa" }}>{tagSummary}</div>
-                {lineup.map((player, j) => (
-                  <div key={j} style={{ borderLeft: `4px solid ${tagColorMap[player.Tag] || "#ccc"}`, paddingLeft: "0.75rem", marginBottom: "0.75rem", fontSize: "0.95rem" }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                        <span style={{ width: "10px", height: "10px", borderRadius: "50%", ...getConfidenceDotStyle(player.Tag, player.Confidence) }} title={`Confidence: ${getConfidenceTier(player.Confidence)}`} />
-                        <strong title={player.Player}>
-                          {player.Player.length > 16 ? player.Player.split(' ')[0][0] + '. ' + player.Player.split(' ')[1] : player.Player}
-                          <span style={{ fontWeight: 400, fontSize: "0.85rem", opacity: 0.7 }}> ({teamAbbrMap[player.Team] || player.Team})</span>
-                        </strong>
-                        {player.Tag === "FADE/UNDER" && player.Confidence > 4.5 && <span title="Elite Under 🔥">🔥</span>}
-                      </div>
-                      <div style={{ whiteSpace: 'nowrap' }}>{player["Prop Value"]} {player["Prop Type"]}</div>
-                    </div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.6, marginLeft: '1.25rem' }}>
-                      {player["Home/Away"]} {player["Start Time"]}
-                    </div>
-                  </div>
-                ))}
+          {activeTab === 'PRIZEPICKS' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6">
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Mix Type:</label>
+                <select value={mixType} onChange={(e) => setMixType(e.target.value)} className="w-full rounded-lg px-4 py-2 border border-gray-300">
+                  <option value="3_OVER_3_UNDER">3 OVER 3 UNDER</option>
+                  <option value="4_OVER_2_UNDER">4 OVER 2 UNDER</option>
+                  <option value="2_OVER_4_UNDER">2 OVER 4 UNDER</option>
+                </select>
               </div>
-            );
-          })}
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Max Lineups:</label>
+                <input type="number" value={maxLineups} onChange={(e) => setMaxLineups(e.target.value)} className="w-full rounded-lg px-4 py-2 border border-gray-300" />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Confidence:</label>
+                <select value={confidenceFilter} onChange={(e) => setConfidenceFilter(e.target.value)} className="w-full rounded-lg px-4 py-2 border border-gray-300">
+                  <option value="">All</option>
+                  <option value="Elite">Elite</option>
+                  <option value="Strong">Strong</option>
+                  <option value="Moderate">Moderate</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Home/Away:</label>
+                <select value={homeAwayFilter} onChange={(e) => setHomeAwayFilter(e.target.value)} className="w-full rounded-lg px-4 py-2 border border-gray-300">
+                  <option value="">All</option>
+                  <option value="H">Home</option>
+                  <option value="A">Away</option>
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Filter by Tag:</label>
+                <select multiple value={lineupTagFilter} onChange={(e) => setLineupTagFilter(Array.from(e.target.selectedOptions, option => option.value))} className="w-full h-40 rounded-lg px-4 py-2 border border-gray-300">
+                  {tags.map(tag => <option key={tag} value={tag}>{tag}</option>)}
+                </select>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Filter by Game:</label>
+                <select multiple value={lineupGameFilter} onChange={(e) => setLineupGameFilter(Array.from(e.target.selectedOptions, option => option.value))} className="w-full h-40 rounded-lg px-4 py-2 border border-gray-300">
+                  {games.map(game => <option key={game} value={game}>{game}</option>)}
+                </select>
+              </div>
+
+              <div className="col-span-1 sm:col-span-2 flex flex-col sm:flex-row sm:items-center gap-4 pt-4">
+                <button
+                  onClick={handleSubmit}
+                  className="px-6 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow hover:bg-blue-700"
+                >
+                  🚀 Generate Lineups
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  disabled={lineupResults.length === 0}
+                  className={`px-6 py-2 rounded-lg font-semibold shadow transition-colors duration-200 ${lineupResults.length > 0 ? "bg-green-600 hover:bg-green-700 text-white" : "bg-gray-300 text-gray-600 cursor-not-allowed"}`}
+                >
+                  📄 Export All Lineups to PDF
+                </button>
+                <input
+                  type="text"
+                  placeholder="e.g. Zach LaVine"
+                  value={searchPlayer}
+                  onChange={(e) => setSearchPlayer(e.target.value)}
+                  className="rounded-lg px-4 py-2 border border-gray-300 min-w-[200px]"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {lineupResults.length > 0 && (
+        <div style={{ marginTop: "2rem" }}>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: "bold" }}>Generated Lineups</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
+            {lineupResults.map((lineup, idx) => (
+              <div
+                key={idx}
+                ref={(el) => (lineupRefs.current[idx] = el)}
+                style={{ border: "1px solid #ccc", borderRadius: "12px", padding: "1rem", background: "#f9f9f9" }}
+              >
+                <h4 style={{ marginBottom: "0.5rem" }}>Lineup {idx + 1}</h4>
+                <ul style={{ paddingLeft: "1.2rem" }}>
+                  {lineup.map((player, i) => (
+                    <li key={i}>
+                      {player.Player} — {player["Prop Type"]} @ {player["Prop Value"]} ({player.Tag})
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>
