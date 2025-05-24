@@ -290,7 +290,7 @@ export default function PropsDashboard() {
 
   try {
     const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
-    const res = await  fetch(`http://playswithguru.com/api/${endpoint}`);  //fetch("https://playswithguru.com/api/props") // or your correct Flask API endpoint
+    const res = await  fetch(`http://playswithguru.com/api${endpoint}`);  //fetch("https://playswithguru.com/api/props") // or your correct Flask API endpoint
 
     const data = await res.json();
     const cleaned = Array.isArray(data) ? data : [];
