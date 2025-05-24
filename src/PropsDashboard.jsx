@@ -290,27 +290,28 @@ export default function PropsDashboard() {
 
   try {
     const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
-    const res = await fetch(`https://playswithguru.com${endpoint}`);    
+    const res = await fetch(endpoint);  // ✅ Already relative to avoid HTTPS issues
   
-    
     if (!res.ok) {
-      throw new Error(`❌ Server error (${res.status}): ${res.statusText}`);
+      const text = await res.text(); // get error as raw text
+      throw new Error(`❌ Server error (${res.status}): ${text}`);
     }
-    
-    const data = await res.json();
-    
-    const cleaned = Array.isArray(data) ? data : [];
-    setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
   
+    const data = await res.json(); // ✅ Only parse if response is OK
+    const cleaned = Array.isArray(data) ? data : [];
+  
+    setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
     setTimeout(() => {
       setPropsData(cleaned);
       setLoading(false);
     }, 150);
+  
   } catch (err) {
-    console.error(`❌ Error fetching ${sport} props`, err);
+    console.error(`❌ Error fetching ${sport} props:`, err.message || err);
     setPropsData([]);
     setLoading(false);
   }
+  
   
 };
 
