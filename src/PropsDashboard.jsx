@@ -289,9 +289,16 @@ export default function PropsDashboard() {
   }
 
   try {
-    const endpoint = sport === "MLB" ? "/api/mlb-props" : "/api/props";
-    const res = await fetch(`${endpoint}`); // ✅ Ensures HTTPS relative fetch
+    const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
+    const res = await fetch(`https://playswithguru.com${endpoint}`);    
+  
+    
+    if (!res.ok) {
+      throw new Error(`❌ Server error (${res.status}): ${res.statusText}`);
+    }
+    
     const data = await res.json();
+    
     const cleaned = Array.isArray(data) ? data : [];
     setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
   
