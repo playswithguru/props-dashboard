@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GoogleLogin } from '@react-oauth/google';
 import { jwtDecode } from 'jwt-decode';
 import LineupGeneratorPanel from './LineupGeneratorPanel';
+import AdvancedLineupPanel from './AdvancedLineupPanel'; // Adjust the path as needed
 import { googleLogout } from '@react-oauth/google';
 import SportsMenu from "./SportsMenu";
 import logo from "./assets/playswithguru-logo.png";
@@ -17,17 +18,45 @@ import {
 
 import { Info } from "lucide-react"; // Use `Info` instead of `InfoIcon`
 
+function formatLocalTime(timeStr, sport) {
+  if (!timeStr || typeof timeStr !== 'string') return 'TBD';
+
+  const now = new Date();
+  const [hourStr, minutePart] = timeStr.split(':');
+  let [minuteStr, period] = minutePart.split(' ');
+  let hour = parseInt(hourStr, 10);
+  const minute = parseInt(minuteStr, 10);
+
+  if (period === 'PM' && hour !== 12) hour += 12;
+  if (period === 'AM' && hour === 12) hour = 0;
+
+  const gameTimeUTC = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute));
+
+  if (sport === 'NBA') {
+    // Assume NBA data pulled in Central Time, shift by -5 (UTC-5)
+    gameTimeUTC.setUTCHours(gameTimeUTC.getUTCHours() + 5);
+  } else if (sport === 'MLB') {
+    // Assume MLB data pulled in Eastern Time, shift by -4 (UTC-4)
+    gameTimeUTC.setUTCHours(gameTimeUTC.getUTCHours() + 4);
+  }
+
+  return gameTimeUTC.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+
 const OptimizedImage = React.memo(({ src, alt, style }) => {
   return <img src={src} alt={alt} loading="lazy" decoding="async" style={style} />;
 });
 
+
 export default function PropsDashboard() {
-  const [activeSport, setActiveSport] = useState("NBA");
+  const [activeSport, setActiveSport] = useState("MLB");
   const [isAdmin, setIsAdmin] = useState(false);
   const [propsData, setPropsData] = useState([]);
   const [selectedTags, setSelectedTags] = useState([]);
   const [darkMode, setDarkMode] = useState(false);
   const [selectedGame, setSelectedGame] = useState("");
+  const [generatedLineups, setGeneratedLineups] = useState([]);
   const [lineupResults, setLineupResults] = useState([]);
   const [playerInput, setPlayerInput] = useState("");
   const [selectedPropType, setSelectedPropType] = useState("");
@@ -36,9 +65,7 @@ export default function PropsDashboard() {
   const [user, setUser] = useState(null);
   const [maxLineups, setMaxLineups] = useState(10);
   const [mixType, setMixType] = useState("3_OVER_3_UNDER");
-  const [lineupGameFilter, setLineupGameFilter] = useState([]);
   const [homeAwayFilter, setHomeAwayFilter] = useState("");
-  const [lineupTagFilter, setLineupTagFilter] = useState([]);
   const [momentumFilter, setMomentumFilter] = useState("");
   const [momentumPatternFilter, setMomentumPatternFilter] = useState("");
   const [confirmedMomentumFilter, setConfirmedMomentumFilter] = useState("");
@@ -48,6 +75,9 @@ export default function PropsDashboard() {
   const [selectedZGuruTag, setSelectedZGuruTag] = useState("");
   const [selectedLeanDirection, setSelectedLeanDirection] = useState("");
   const [selectedGuruConflict, setSelectedGuruConflict] = useState("");
+  const [selectedGuruPicks, setSelectedGuruPicks] = useState("");
+  const [selectedIsGuruPicks, setSelectedIsGuruPicks] = useState("");
+  const [selectedGuruMagic, setSelectedGuruMagic] = useState("");
   const [showCommentary, setShowCommentary] = useState(false);
   const [selectedCommentary, setSelectedCommentary] = useState("");
   const lineupRefs = useRef([]);
@@ -55,7 +85,54 @@ export default function PropsDashboard() {
   const [cardToggles, setCardToggles] = useState({});
   const [selectedTime, setSelectedTime] = useState("All");
   const now = new Date();
+  const [propsCache, setPropsCache] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [selectedSports, setSelectedSports] = useState(["MLB"]); // Default to NBA or []
+  const [uniqueGames, setUniqueGames] = useState([]);
+
+  const multiSportMode = selectedSports.length > 1;
   
+
+  const fetchProps = async (sport) => {
+    setLoading(true);
+    setSelectedSports([sport]); // 👈 force sport alignment
+  
+    if (propsCache[sport]) {
+      setPropsData(propsCache[sport]);
+      setLoading(false);
+      return;
+    }
+  
+    try {
+      const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
+      const res = await fetch(`http://localhost:5050${endpoint}`);
+      const data = await res.json();
+      const cleaned = Array.isArray(data) ? data : [];
+  
+      setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
+  
+      setTimeout(() => {
+        setPropsData(cleaned);
+        
+        const games = cleaned
+          .filter(p => p.Team && p.Opponent && p.Sport && p.Team.toLowerCase() !== 'nan' && p.Opponent.toLowerCase() !== 'nan')
+          .map(p => {
+            const teams = [p.Team, p.Opponent].sort();
+            return multiSportMode
+            ? `${teams[0]} vs ${teams[1]} (${p.Sport})`
+            : `${teams[0]} vs ${teams[1]}`;
+          });
+  
+        setUniqueGames([...new Set(games)].sort());
+  
+        setLoading(false);
+      }, 150);
+    } catch (err) {
+      console.error(`❌ Error fetching ${sport} props`, err);
+      setPropsData([]);
+      setLoading(false);
+    }
+  };
 
   const toggleCardSections = (key) => {
     const isExpanded = cardToggles[key] || false;
@@ -72,6 +149,379 @@ export default function PropsDashboard() {
     setCardToggles(allCollapsed);
   };
   
+  useEffect(() => {
+    setSelectedTags([]);
+    setSelectedGame("");
+    setSelectedPropType("");
+    setSelectedConfidence("");
+    setPlayerInput("");
+    setHomeAwayFilter("");
+    setPlayerTypeFilter("");
+    setSelectedTeam("");
+    setMomentumFilter("");
+    setConfirmedMomentumFilter("");
+    setMomentumPatternFilter("");
+    setSelectedGuruPotential("");
+    setSelectedZGuruTag("");
+    setSelectedLeanDirection("");
+    setSelectedGuruConflict("");
+    setSelectedGuruPicks("");
+    setSelectedIsGuruPicks("");
+    setShowCommentary(false);
+    setSelectedCommentary("");
+    setSelectedGuruMagic("");
+    setSelectedTime("");
+    setLoading(true);            
+    fetchProps(activeSport); 
+  }, [activeSport]);
+
+  
+  useEffect(() => {
+    if (!loading && propsCache[activeSport]) {
+      setPropsData(propsCache[activeSport]);
+    }
+  }, [loading, activeSport, propsCache]);
+
+
+  // Additional filters for lineup generation
+  const [lineupType, setLineupType] = useState("PROP");
+  const [lineupSize, setLineupSize] = useState(6);
+  const [overUnderPreference, setOverUnderPreference] = useState("Guru");
+  const [lineupGameTimeFilter, setLineupGameTimeFilter] = useState("");
+  const [lineupHomeAwayFilter, setLineupHomeAwayFilter] = useState("");
+  const [lineupSportFilter, setLineupSportFilter] = useState(activeSport);
+  const [lineupGameFilter, setLineupGameFilter] = useState("");
+  const [lineupMode, setLineupMode] = useState("Basic"); // Basic or Advanced
+
+// updated generateLineups logic to include random prop type fallback and direction label
+// updated generateLineups logic to use selected sport, exclude props with missing game data, and avoid duplicate players
+
+const shuffleArray = (array) => {
+  const arr = [...array];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+};
+
+const inputStyle = {
+  padding: "0.5rem 1rem",
+  fontSize: "0.95rem",
+  borderRadius: "12px",
+  border: "1px solid #ccc",
+  background: "#fff",
+  boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
+  appearance: "none",
+  fontFamily: "Inter, sans-serif",
+  minWidth: "140px"
+};
+
+const generateLineups = (maxLineupsArg) => {
+  const selectedProps = propsCache[lineupSportFilter] || [];
+  const pool = selectedProps.filter((p) => {
+    if (!p.Matchup || p.Matchup.toLowerCase().includes("nan")) return false;
+    if (!p.Player || !p.Team) return false;
+    if (lineupGameTimeFilter && !p.GameTime?.includes(lineupGameTimeFilter)) return false;
+    if (lineupHomeAwayFilter && p["Home/Away"] !== lineupHomeAwayFilter) return false;
+    if (lineupGameFilter && !p.Matchup?.toLowerCase().includes(lineupGameFilter.toLowerCase())) return false;
+    return true;
+  });
+
+  const overs = shuffleArray(pool.filter(p => p.Tag === "SMASH" || p.Tag === "MEGA SMASH"));
+  const unders = shuffleArray(pool.filter(p => p.Tag === "FADE/UNDER"));
+
+  const lineups = [];
+
+  for (let i = 0; i < maxLineupsArg; i++) {
+    let attempts = 0;
+    let lineup = [];
+    while (attempts < 100) {
+      let tempLineup = [];
+      if (overUnderPreference === "Even") {
+        const count = Math.floor(lineupSize / 2);
+        tempLineup = [...overs.slice(0, count), ...unders.slice(0, lineupSize - count)];
+      } else if (overUnderPreference === "MoreOvers") {
+        const count = Math.ceil(lineupSize * 0.7);
+        tempLineup = [...overs.slice(0, count), ...unders.slice(0, lineupSize - count)];
+      } else if (overUnderPreference === "MoreUnders") {
+        const count = Math.ceil(lineupSize * 0.7);
+        tempLineup = [...unders.slice(0, count), ...overs.slice(0, lineupSize - count)];
+      } else {
+        tempLineup = shuffleArray(pool).slice(0, lineupSize);
+      }
+
+      if (tempLineup.length === lineupSize) {
+        const teamCounts = {};
+        const playerSet = new Set();
+        let duplicatePlayer = false;
+
+        for (const p of tempLineup) {
+          if (!p.Player || playerSet.has(p.Player)) {
+            duplicatePlayer = true;
+            break;
+          }
+          playerSet.add(p.Player);
+          teamCounts[p.Team] = (teamCounts[p.Team] || 0) + 1;
+        }
+
+        const teamDiversityOK = Object.keys(teamCounts).length > 1;
+        if (teamDiversityOK && !duplicatePlayer) {
+          lineup = tempLineup;
+          break;
+        }
+      }
+      attempts++;
+    }
+
+    if (lineup.length === lineupSize) {
+      lineups.push(lineup);
+    }
+  }
+
+  return lineups;
+};
+
+
+// 🔁 Lineup Result Rendering with Improved Spacing, Timestamp, and Logo Branding
+const renderLineupResult = () => (
+  generatedLineups.length > 0 && (
+    <div style={{ marginTop: '2rem' }}>
+      <h3 style={{ marginBottom: '1rem' }}>Generated Lineups</h3>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
+        {generatedLineups.map((lineup, index) => (
+          <div key={index} style={{
+            flex: '1 1 420px',
+            border: '1px solid #ccc',
+            borderRadius: '12px',
+            backgroundColor: '#fff',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.05)',
+            padding: '1rem',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <img src="/playswithguru-logo.png" alt="logo" style={{ height: '36px' }} />
+                <span style={{
+                  backgroundColor: '#e3f2fd',
+                  color: '#1565c0',
+                  fontWeight: '700',
+                  fontSize: '1.1rem',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '8px'
+                }}>Lineup {index + 1}</span>
+              </div>
+              <span style={{ fontSize: '0.85rem', fontWeight: 400, color: '#777' }}>
+                {new Date().toLocaleString(undefined, {
+                  month: 'short',
+                  day: '2-digit',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  hour12: true,
+                  timeZoneName: 'short'
+                })}
+              </span>
+            </div>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '0.5fr 2fr 2fr 2fr 1fr 1fr',
+              fontWeight: 'bold',
+              borderBottom: '1px solid #ccc',
+              paddingBottom: '0.5rem',
+              marginBottom: '0.5rem'
+            }}>
+              <div>#</div>
+              <div>Name</div>
+              <div>Game</div>
+              <div>Prop</div>
+              <div style={{ paddingRight: '1rem', textAlign: 'right' }}>Value</div>
+              <div>O/U</div>
+            </div>
+            {lineup.map((p, idx) => (
+              <div key={idx} style={{
+                display: 'grid',
+                gridTemplateColumns: '0.5fr 2fr 2fr 2fr 1fr 1fr',
+                alignItems: 'center',
+                borderBottom: '1px dashed #eee',
+                padding: '0.5rem 0'
+              }}>
+                <div>{idx + 1}</div>
+                <div>
+                  {p.Player}
+                  <div style={{ fontSize: '0.75rem', color: '#999' }}>({p.Sport || activeSport})</div>
+                </div>
+                <div>{p.Matchup || `${p.Team} ${p["Home/Away"] === 'away' ? '@' : 'vs'} ${p.Opponent}`}</div>
+                <div style={{ whiteSpace: 'normal', wordWrap: 'break-word' }}>{p["Prop Type"]}</div>
+                <div style={{ paddingRight: '1.5rem', textAlign: 'right' }}>{p["Prop Value"]}</div>
+                <div style={{ color: p.Tag === 'FADE/UNDER' ? '#d32f2f' : '#2e7d32', fontWeight: 'bold' }}>
+                  {p.Tag === 'FADE/UNDER' ? 'UNDER' : 'OVER'}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+);
+
+
+
+
+
+const handleGenerate = () => {
+  const lineups = generateLineups(maxLineups);
+  setGeneratedLineups(lineups);
+};
+
+// ✅ Lineup Generator Control Styling Upgrade
+const lineupControlStyles = {
+  base: {
+    borderRadius: '10px',
+    padding: '0.6rem 0.75rem',
+    fontSize: '1rem',
+    fontWeight: '500',
+    border: '1px solid #ccc',
+    backgroundColor: '#fefefe',
+    color: '#333',
+    minWidth: '160px'
+  },
+  label: {
+    fontWeight: '600',
+    fontSize: '0.85rem',
+    marginBottom: '0.25rem',
+    display: 'inline-block'
+  }
+};
+
+  // Render lineup generation section
+  const renderLineupGenerator = () => (
+    <div style={{ padding: '1.5rem', background: '#f9f9f9', borderRadius: '8px', marginTop: '2rem' }}>
+      {renderLineupFilters()}
+      <button
+        onClick={handleGenerate}
+        style={{ padding: '0.75rem 1.5rem', background: 'black', color: 'white', border: 'none', borderRadius: '8px', marginBottom: '1rem' }}
+      >
+        Generate Lineup
+      </button>
+      {renderLineupResult()}
+    </div>
+  );
+
+  const renderLineupFilters = () => (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBottom: "1.5rem" }}>
+      <div>
+        <label style={lineupControlStyles.label}>Lineup Type</label><br />
+        <select style={lineupControlStyles.base} value={lineupType} onChange={(e) => setLineupType(e.target.value)}>
+          <option value="PROP">PROP</option>
+          <option value="DK">DraftKings</option>
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Max Lineups</label><br />
+        <select style={lineupControlStyles.base} value={maxLineups} onChange={(e) => setMaxLineups(Number(e.target.value))}>
+          {[1, 2, 3, 5, 10, 20].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Lineup Size</label><br />
+        <select style={lineupControlStyles.base} value={lineupSize} onChange={(e) => setLineupSize(Number(e.target.value))}>
+          {[2, 3, 4, 5, 6, 8, 12].map(n => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Over/Under Mix</label><br />
+        <select style={lineupControlStyles.base} value={overUnderPreference} onChange={(e) => setOverUnderPreference(e.target.value)}>
+          <option value="Guru">Guru Pick</option>
+          <option value="Even">Even Mix</option>
+          <option value="MoreOvers">More Overs</option>
+          <option value="MoreUnders">More Unders</option>
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Game Time</label><br />
+        <select style={lineupControlStyles.base} value={lineupGameTimeFilter} onChange={(e) => setLineupGameTimeFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="Early">Early</option>
+          <option value="Afternoon">Afternoon</option>
+          <option value="Evening">Evening</option>
+          <option value="Late">Late</option>
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Home/Away</label><br />
+        <select style={lineupControlStyles.base} value={lineupHomeAwayFilter} onChange={(e) => setLineupHomeAwayFilter(e.target.value)}>
+          <option value="">All</option>
+          <option value="home">Home</option>
+          <option value="away">Away</option>
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Sport</label><br />
+        <select style={lineupControlStyles.base} value={lineupSportFilter} onChange={(e) => setLineupSportFilter(e.target.value)}>
+          <option value="MLB">MLB</option>
+        </select>
+      </div>
+      <div>
+        <label style={lineupControlStyles.label}>Game</label><br />
+        <input
+          type="text"
+          placeholder="e.g. NYK vs BOS"
+          style={lineupControlStyles.base} value={lineupGameFilter}
+          onChange={(e) => setLineupGameFilter(e.target.value)}
+        />
+      </div>
+    </div>
+  );
+
+
+  // Lineup mode toggle UI (Basic/Advanced)
+  const renderLineupModeToggle = () => (
+    <div style={{ display: "flex", gap: "1rem" }}>
+      <button
+        onClick={() => setLineupMode("Basic")}
+        style={{
+          padding: "0.5rem 1rem",
+          background: lineupMode === "Basic" ? "#333" : "#eee",
+          color: lineupMode === "Basic" ? "white" : "black",
+          border: "none",
+          borderRadius: "8px"
+        }}
+      >
+        Basic
+      </button>
+      <button
+        onClick={() => setLineupMode("Advanced")}
+        style={{
+          padding: "0.5rem 1rem",
+          background: lineupMode === "Advanced" ? "#333" : "#eee",
+          color: lineupMode === "Advanced" ? "white" : "black",
+          border: "none",
+          borderRadius: "8px"
+        }}
+      >
+        Advanced
+      </button>
+    </div>
+  );
+  
+
+
+  const [lineupTagFilter, setLineupTagFilter] = useState([]);
+  const [lineupConfidenceFilter, setLineupConfidenceFilter] = useState([]);
+  const [lineupPropTypeFilter, setLineupPropTypeFilter] = useState([]);
+  const [lineupMomentumTagFilter, setLineupMomentumTagFilter] = useState([]);
+  const [lineupMomentumPatternFilter, setLineupMomentumPatternFilter] = useState([]);
+  const [lineupConfirmedMomentumFilter, setLineupConfirmedMomentumFilter] = useState([]);
+  const [lineupZGuruTagFilter, setLineupZGuruTagFilter] = useState([]);
+  const [lineupGuruPotentialFilter, setLineupGuruPotentialFilter] = useState([]);
+  const [lineupGuruConflictFilter, setLineupGuruConflictFilter] = useState([]);
+
+
 
     // ✅ Clear All Filters
     const clearAllFilters = () => {
@@ -90,8 +540,13 @@ export default function PropsDashboard() {
       setSelectedZGuruTag("");
       setSelectedLeanDirection("");
       setSelectedGuruConflict("");
+      setSelectedGuruPicks("");
+      setSelectedIsGuruPicks("");
       setShowCommentary(false);
       setSelectedCommentary("");
+      setSelectedGuruMagic("");
+      setSelectedTime("");
+      
     };
 
   const getConfidenceLabel = (conf) => {
@@ -101,7 +556,7 @@ export default function PropsDashboard() {
     return "Low";
   };
 
-  //💬🗨️<
+  //💬
   const renderAICommentaryTrigger = (commentary) => (
     <TooltipProvider>
       <Tooltip delayDuration={200}>
@@ -155,11 +610,13 @@ export default function PropsDashboard() {
   );
 
   const tagColorMap = {
-    "MEGA SMASH": "#0095e0",
-    "SMASH": "#2e7d32",
-    "GOOD": "#f9a825",
-    "LEAN": "#8e24aa",
-    "FADE/UNDER": "#d32f2f"
+    "MEGA SMASH": "#0095e0",    // Guru Blue (unchanged)
+    "SMASH": "#2e7d32",         // Deep Green
+    "LEAN OVER": "#8e24aa",     // Purple
+    "MEGA FADE": "#b71c1c",     // Deeper Red (Blood Red)
+    "FADE": "#ef6c00",          // Strong Orange (Dark Amber)
+    "LEAN UNDER": "#f9a825",    // Yellow (unchanged)
+    "COIN TOSS": "#90a4ae"      // Slate Gray (unchanged)
   };
 
   const getTeamLogo = (team) => {
@@ -180,9 +637,9 @@ export default function PropsDashboard() {
   
   const mlbPropTypeLabelMap = {
     "Hits": "Hits", "Runs": "Runs", "RBIs": "RBIs", "Home Runs": "Home Runs",
-    "Stolen Bases": "Stolen Bases", "Walks": "Walks", "Total Bases": "Total Bases",
+    "Stolen Bases": "Stolen Bases", "Walks": "Walks","Walks Allowed":"Walks Allowed", "Total Bases": "Total Bases",
     "Pitcher Strikeouts": "Pitcher Strikeouts", "Hitter Strikeouts": "Hitter Strikeouts",
-    "Hitter Fantasy Score": "Hitter Fantasy Score", "Hits+Runs+RBIs": "Hits + Runs + RBIs"
+    "Hitter Fantasy Score": "Hitter Fantasy Score", "Hits+Runs+RBIs": "Hits + Runs + RBIs", "ERA": "Earned Runs Allowed"
   };
 
   const propTypeLabelMap = activeSport === "NBA" ? nbaPropTypeLabelMap : mlbPropTypeLabelMap;
@@ -210,31 +667,43 @@ export default function PropsDashboard() {
       if (selectedTags.length > 0 && !selectedTags.includes(p.Tag)) return false;
       if (selectedGuruPotential && p["GuruPotential"] !== selectedGuruPotential) return false;
       if (selectedGame) {
-        const sortedTeams = [p.Team, p.Opponent].sort();
-        const game = `${sortedTeams[0]} vs ${sortedTeams[1]}`;
-        if (game !== selectedGame) return false;
-      }
+        const gameKey = multiSportMode
+          ? `${[p.Team, p.Opponent].sort().join(' vs ')} (${p.Sport})`
+          : `${[p.Team, p.Opponent].sort().join(' vs ')}`;
+        if (gameKey !== selectedGame) return false;
+      }      
       if (selectedTime !== "All") {
         const timeStr = p["GameTime"];
         if (!timeStr) return false;
-  
+      
         const [time, meridian] = timeStr.split(" ");
         let [hour, minute] = time.split(":").map(Number);
+      
         if (meridian === "PM" && hour !== 12) hour += 12;
         if (meridian === "AM" && hour === 12) hour = 0;
-  
-        if (selectedTime === "Early" && hour < 15) return true;
-        if (selectedTime === "Afternoon" && hour >= 15 && hour < 17) return true;
-        if (selectedTime === "Evening" && hour >= 17 && hour < 20) return true;
-        if (selectedTime === "Late" && hour >= 20) return true;
-        return false;
-      }
+      
+        const isEarly = hour < 15;
+        const isAfternoon = hour >= 15 && hour < 17;
+        const isEvening = hour >= 17 && hour < 20;
+        const isLate = hour >= 20;
+      
+        if (
+          (selectedTime === "Early" && !isEarly) ||
+          (selectedTime === "Afternoon" && !isAfternoon) ||
+          (selectedTime === "Evening" && !isEvening) ||
+          (selectedTime === "Late" && !isLate)
+        ) {
+          return false;
+        }
+      }      
       if (selectedPropType && p["Prop Type"] !== selectedPropType) return false;
-      //if (selectedConfidence && getConfidenceLabel(p.Confidence) !== selectedConfidence) return false;
       if (selectedZGuruTag && p["ZGuruTag"] !== selectedZGuruTag) return false;
       if (selectedLeanDirection && p["LeanDirection"] !== selectedLeanDirection) return false;
       if (selectedGuruConflict && p["GuruConflict"] !== selectedGuruConflict) return false;
-    
+      if (selectedIsGuruPicks !== "" && p["IsGuruPick"] !== selectedIsGuruPicks) return false;
+      if (selectedGuruPicks && p["GuruPick"] !== selectedGuruPicks) return false;
+      if (selectedGuruMagic && p["GuruMagic"] !== selectedGuruMagic) return false;
+      
       if (selectedConfidence) {
         const label = getConfidenceLabel(p.Confidence);
         if (selectedConfidence.startsWith("Over ")) {
@@ -246,98 +715,52 @@ export default function PropsDashboard() {
         } else {
           if (label !== selectedConfidence) return false;
         }
-      }      
+      } 
+      if (!loading && propsCache[activeSport]) {
+        setPropsData(propsCache[activeSport]);
+      }     
       if (homeAwayFilter && p["Home/Away"]?.toLowerCase() !== homeAwayFilter.toLowerCase()) return false;
       if (playerInput && !(p.Player || "").toLowerCase().includes(playerInput.toLowerCase())) return false;
-
       // ✅ Old "Momentum Tag" filter
       if (momentumFilter === "TRENDING UP" && p["MomentumTag"] !== "TRENDING UP") return false;
       if (momentumFilter === "TRENDING DOWN" && p["MomentumTag"] !== "TRENDING DOWN") return false;
-
       // ✅ New "Momentum Pattern" filter
       if (momentumPatternFilter === "TRENDING UP" && p["MomentumPattern"] !== "TRENDING UP") return false;
       if (momentumPatternFilter === "TRENDING DOWN" && p["MomentumPattern"] !== "TRENDING DOWN") return false;
-
       // ✅ Confirmed Momentum (only if pattern and tag match)
       if (confirmedMomentumFilter === "CONFIRMED TRENDING UP" && p["ConfirmedMomentum"] !== "CONFIRMED TRENDING UP") return false;
       if (confirmedMomentumFilter === "CONFIRMED TRENDING DOWN" && p["ConfirmedMomentum"] !== "CONFIRMED TRENDING DOWN") return false;
-      
-      
       if (playerTypeFilter && p["Player Type"] && p["Player Type"] !== playerTypeFilter) return false;
       if (selectedTeam && p.Team !== selectedTeam) return false;
       if (p.Tag === "UNSUPPORTED" || p.Tag === "INSUFFICIENT" || p.Tag === "MISSINGDATA" || p.Tag === "NO_PROP") return false;
       return true;
     });
-  }, [propsData, selectedTags, selectedGame, selectedPropType, selectedConfidence, selectedGuruPotential, playerInput,
-    selectedZGuruTag, selectedLeanDirection, selectedGuruConflict, homeAwayFilter, momentumFilter, momentumPatternFilter,
-     confirmedMomentumFilter,playerTypeFilter, selectedTeam, selectedTime]);
+  }, [propsData, selectedTags, selectedGame, selectedPropType, selectedConfidence, selectedGuruPotential, playerInput,selectedGuruMagic,
+    selectedZGuruTag, selectedLeanDirection, selectedGuruConflict,selectedGuruPicks,selectedIsGuruPicks,homeAwayFilter, momentumFilter, momentumPatternFilter,
+     confirmedMomentumFilter,playerTypeFilter, selectedTeam, selectedTime, propsCache, loading, activeSport]);
 
-
-  const [propsCache, setPropsCache] = useState({});
-  const [loading, setLoading] = useState(false);
-
-  const fetchProps = async (sport) => {
-  setLoading(true);
-  setPropsData([]); // Clear current cards immediately
-
-  if (propsCache[sport]) {
-    setTimeout(() => {
-      setPropsData(propsCache[sport]);
-      setLoading(false);
-    }, 150);
-    return;
-  }
-
-  try {
-    const endpoint = sport === "MLB" ? "/mlb-props" : "/props";
-    const res = await fetch(endpoint);  // ✅ Already relative to avoid HTTPS issues
+     useEffect(() => {
+      if (!propsData || propsData.length === 0) return;
   
-    if (!res.ok) {
-      const text = await res.text(); // get error as raw text
-      throw new Error(`❌ Server error (${res.status}): ${text}`);
-    }
-  
-    const data = await res.json(); // ✅ Only parse if response is OK
-    const cleaned = Array.isArray(data) ? data : [];
-  
-    setPropsCache(prev => ({ ...prev, [sport]: cleaned }));
-    setTimeout(() => {
-      setPropsData(cleaned);
-      setLoading(false);
-    }, 150);
-  
-  } catch (err) {
-    console.error(`❌ Error fetching ${sport} props:`, err.message || err);
-    setPropsData([]);
-    setLoading(false);
-  }
-  
-  
-};
+      const allGames = propsData
+        .filter(p =>
+          p.Team &&
+          p.Opponent &&
+          p.Team.toLowerCase() !== 'nan' &&
+          p.Opponent.toLowerCase() !== 'nan' &&
+          selectedSports.includes(p.Sport)
+        )
+        .map(p => {
+          const teams = [p.Team, p.Opponent].sort();
+          return multiSportMode
+            ? `${teams[0]} vs ${teams[1]} (${p.Sport})`
+            : `${teams[0]} vs ${teams[1]}`;
 
-
-useEffect(() => {
-  setSelectedTags([]);
-  setSelectedGame("");
-  setSelectedPropType("");
-  setSelectedConfidence("");
-  setPlayerInput("");
-  setHomeAwayFilter("");
-  setPlayerTypeFilter("");
-  setSelectedTeam("");
-  setMomentumFilter("");
-  setConfirmedMomentumFilter("");
-  setMomentumPatternFilter("");
-  setSelectedGuruPotential("");
-  setSelectedZGuruTag("");
-  setSelectedLeanDirection("");
-  setSelectedGuruConflict("");
-  setShowCommentary(false);
-  setSelectedCommentary("");
-  setLoading(true);            
-  fetchProps(activeSport); 
-}, [activeSport]);
-
+        });
+  
+      setUniqueGames([...new Set(allGames)].sort());
+    }, [propsData, selectedSports]);
+    
   
 const CommentaryModal = () => (
   showCommentary ? (
@@ -356,15 +779,6 @@ const CommentaryModal = () => (
   const toggleTag = (tag) => {
     setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
   };
-
-  const uniqueGames = [...new Set(
-  propsData
-    .filter(p => p.Team && p.Opponent && p.Team.toLowerCase() !== 'nan' && p.Opponent.toLowerCase() !== 'nan')
-    .map(p => {
-      const teams = [p.Team, p.Opponent].sort();
-      return `${teams[0]} vs ${teams[1]}`;
-    })
-)];
   
   const uniquePropTypes = useMemo(() => {
   if (activeSport === "MLB") {
@@ -488,6 +902,13 @@ const CommentaryModal = () => (
           <option value="CONFIRMED TRENDING UP">Trending Up</option>
           <option value="CONFIRMED TRENDING DOWN">Trending Down</option>
         </select>
+        <select value={selectedGuruMagic} onChange={(e) => setSelectedGuruMagic(e.target.value)} style={{ borderRadius: "12px", padding: "0.5rem" }}>
+          <option value="">All Guru Magic</option>
+          <option value="⚠️ GURU CHAOS">GURU CHAOS</option>
+          <option value="OVER">OVER</option>
+          <option value="⚠️ GURU RISK">GURU RISK</option>
+          <option value="UNDER">UNDER</option>
+        </select>
         <select value={selectedGuruPotential} onChange={(e) => setSelectedGuruPotential(e.target.value)} style={{ borderRadius: "12px", padding: "0.5rem" }}>
           <option value="">All Guru Potential</option>
           <option value="GURU SMASH">GURU SMASH</option>
@@ -513,6 +934,21 @@ const CommentaryModal = () => (
           <option value="MATCH">MATCH</option>
           <option value="RETAGGED">RETAGGED</option>
         </select>
+        <select
+          value={selectedIsGuruPicks}
+          onChange={(e) => setSelectedIsGuruPicks(e.target.value === "true")}
+          style={{ borderRadius: "12px", padding: "0.5rem" }}
+        >
+          <option value="">Full Player Pool</option>
+          <option value="true">GURU POOL</option>
+          <option value="false">FULL POOL</option>
+        </select>
+
+        <select value={selectedGuruPicks} onChange={(e) => setSelectedGuruPicks(e.target.value)} style={{ borderRadius: "12px", padding: "0.5rem" }}>
+          <option value="">All Guru Picks</option>
+          <option value="OVER">OVER</option>
+          <option value="UNDER">UNDER</option>
+        </select>
         <button onClick={expandAllSections} style={{ padding: "0.5rem 1rem", backgroundColor: "#eee", borderRadius: "12px" }}>Expand All</button>
         <button onClick={collapseAllSections} style={{ padding: "0.5rem 1rem", backgroundColor: "#eee", borderRadius: "12px" }}>Collapse All</button>
         <button onClick={clearAllFilters} style={{ padding: "0.5rem 1rem", backgroundColor: "#ccc", borderRadius: "12px" }}>Clear All Filters</button>
@@ -526,7 +962,7 @@ const CommentaryModal = () => (
               const propLabel = propTypeLabelMap[p["Prop Type"]] || p["Prop Type"];
               const projected = getProjectedValue(p);
               const propAbbr = getPropAbbr(propLabel);
-              const matchupLine = p.GameTime ? `🕒 ${p.GameTime} — ${p["Home/Away"]?.toLowerCase() === "home" ? "🏠 Home" : "✈️ Away"}` : "🕒 TBD";
+              const matchupLine = p.GameTime ? `🕒 ${formatLocalTime(p.GameTime, activeSport)} — ${p["Home/Away"]?.toLowerCase() === "home" ? "🏠 Home" : "✈️ Away"}` : "🕒 TBD";
               const teamAbbr = p.Team;
               const opponentAbbr = p.Opponent;
               const teamColor = getTeamColor(p.Team, activeSport);
@@ -543,7 +979,7 @@ const CommentaryModal = () => (
                   </h3>
                   <div style={{ display: 'flex', alignItems: 'center', margin: '0.5rem 0' }}>
                     <span style={{ backgroundColor: '#eee', padding: '0.4rem 0.75rem', borderRadius: '999px', display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: '600', fontSize: '0.85rem', boxShadow: 'inset 0 0 0 1px #ccc' }}>
-                      🕒 {p.GameTime || 'TBD'} — {p["Home/Away"]?.toLowerCase() === "home" ? "🏠 Home" : "✈️ Away"}
+                      {matchupLine}
                     </span>
                     <span style={{ marginLeft: '0.5rem', fontWeight: 'bold' }}>vs</span>
                     <span style={{ border: `2px solid ${opponentColor}`, padding: '0.25rem 0.75rem', borderRadius: '999px', fontWeight: 'bold', color: opponentColor, marginLeft: '0.5rem' }}>{p.Opponent}</span>
@@ -553,6 +989,9 @@ const CommentaryModal = () => (
                     <strong>📈 Prop:</strong>
                     <span style={{ fontWeight: 500 }}>{propLabel}</span>
                     — <strong>{Number(p["Prop Value"]).toFixed(2)}</strong>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.3rem' }}>
+                    <strong>vs {p["opp_pitcher"]} (ERA):</strong>{Number(p["opp_era"]).toFixed(2)}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.3rem' }}>
                     <strong>📊 Projection:</strong>
@@ -634,8 +1073,38 @@ const CommentaryModal = () => (
           </div>
         </TooltipProvider>
       )}
+      {showLineupSection && (
+        <div style={{ padding: '1.5rem', background: '#f9f9f9', borderRadius: '8px', marginTop: '2rem' }}>
+          <div style={{ marginBottom: "1rem" }}>
+            <h2 style={{ marginBottom: "1.2rem" }}>Lineup Generator</h2>
+            {renderLineupModeToggle()}
+          </div>
+          {lineupMode === "Advanced" ? (
+            <AdvancedLineupPanel
+              allTags={Object.keys(tagColorMap)}
+              allGames={uniqueGames}
+              allSports={["NBA", "MLB", "NFL", "SOCCER", "MMA", "GOLF", "WNBA", "CBB", "NHL"]}
+              selectedSports={selectedSports}
+              setSelectedSports={setSelectedSports}
+              handleLineupGenerate={(config) => {
+                console.log("📦 Advanced config sent to backend:", config);
+                fetch("http://localhost:5050/generate-lineups", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(config),
+                })
+                  .then(res => res.json())
+                  .then(data => setGeneratedLineups(data))
+                  .catch(err => console.error("❌ Failed to generate advanced lineups:", err));
+              }}
+            />
+          ) : (
+            renderLineupGenerator()
+          )}
+        </div>
+      )}
     </div>
     );
   } // end PropsDashboard
 
-                 
+     

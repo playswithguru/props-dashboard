@@ -38,13 +38,10 @@ def generate_lineups(
     df_filtered["Player"] = df_filtered["Player"].astype(str).str.strip()
     df_filtered["Team"] = df_filtered["Team"].astype(str).str.strip()
     df_filtered["Opponent"] = df_filtered["Opponent"].astype(str).str.strip()
-    df_filtered["Game"] = df_filtered["Team"] + " vs " + df_filtered["Opponent"]
+    df_filtered["Game"] = df_filtered["Team"] + " vs " + df_filtered["Opponent"] + " (" + df_filtered["Sport"] + ")"
 
     if filter_games:
         df_filtered = df_filtered[df_filtered["Game"].isin(filter_games)]
-
-    # Normalize tags
-    df_filtered["Simulated Tag"] = df_filtered["Simulated Tag"].astype(str).str.upper().str.strip()
 
     over_tags = ["MEGA SMASH", "SMASH", "GOOD"]
     under_tags = ["FADE/UNDER"]
@@ -98,37 +95,42 @@ def generate_lineups(
     print(f"✅ {len(lineups)} lineups generated (from {attempts} attempts)")
     return lineups
 
-# =========================
-# 🔧 FROM CONFIG ENTRYPOINT
-# =========================
 def generate_lineups_from_config(config, df):
     print("📦 Config Received:")
     home_away_filter = config.get("homeAway", "")
     filter_games = config.get("filterGames", [])
     filter_tags = config.get("filterTags", [])
+    selected_sports = config.get("sports", [])
     mix_type = config.get("mixType", "3_OVER_3_UNDER")
     max_lineups = config.get("maxLineups", 10)
 
     print("  ▶️ homeAway:", home_away_filter)
     print("  ▶️ filterGames:", filter_games)
     print("  ▶️ filterTags:", filter_tags)
+    print("  ▶️ sports:", selected_sports)
 
     if df is None:
         print("❌ DataFrame 'df' is None. Cannot generate lineups.")
         return []
 
-    if not isinstance(filter_games, list):
-        filter_games = []
-    if not isinstance(filter_tags, list):
-        filter_tags = []
+    if not isinstance(filter_games, list): filter_games = []
+    if not isinstance(filter_tags, list): filter_tags = []
+    if not isinstance(selected_sports, list): selected_sports = []
+
+    if "Sport" in df.columns:
+        df["Sport"] = df["Sport"].astype(str).str.lower()
+        if selected_sports:
+            df = df[df["Sport"].isin([s.lower() for s in selected_sports])]
+    else:
+        print("⚠️ No 'Sport' column found in dataset — skipping sport filtering.")
 
     if home_away_filter in ["home", "away"]:
         df = df[df["Home/Away"].str.strip().str.lower() == home_away_filter]
 
-    if len(filter_games) > 0:
+    if filter_games:
         df = df[df["Game"].isin(filter_games)]
 
-    if len(filter_tags) > 0:
+    if filter_tags:
         df = df[df["Tag"].isin(filter_tags)]
 
     try:
@@ -145,8 +147,8 @@ def generate_lineups_from_config(config, df):
             allowed_tags=["MEGA SMASH", "SMASH", "GOOD", "LEAN", "FADE/UNDER"]
         )
 
-        if lineups is None:
-            print("⚠️ Warning: generate_lineups returned None")
+        if not lineups:
+            print("⚠️ No lineups returned.")
             return []
 
         sanitized = []
@@ -155,7 +157,7 @@ def generate_lineups_from_config(config, df):
                 df_clean = lineup.replace({np.nan: None, np.inf: None, -np.inf: None})
                 sanitized.append(df_clean.to_dict(orient="records"))
             else:
-                print("⚠️ Warning: Unexpected lineup type:", type(lineup))
+                print("⚠️ Unexpected lineup type:", type(lineup))
 
         return sanitized
 
@@ -164,7 +166,7 @@ def generate_lineups_from_config(config, df):
         return []
 
 # =========================
-# 💾 SAVE TO EXCEL (for manual testing only)
+# 🗓️ SAVE TO EXCEL (for manual testing only)
 # =========================
 def write_lineups_to_excel(lineups_dict, writer):
     for mix_name, lineup_list in lineups_dict.items():
@@ -174,4 +176,4 @@ def write_lineups_to_excel(lineups_dict, writer):
                 rows.append({"Lineup": idx, **row})
         out_df = pd.DataFrame(rows)
         out_df.to_excel(writer, sheet_name=mix_name[:31], index=False)
-        print(f"💾 Saved {len(lineup_list)} lineups to sheet: {mix_name}")
+        print(f"🗕️ Saved {len(lineup_list)} lineups to sheet: {mix_name}")

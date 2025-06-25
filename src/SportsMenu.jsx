@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 
-const sports = ["NBA", "MLB", "WNBA", "NFL", "SOCCER", "MMA", "GOLF", "TENNIS"];
+const sports = ["MLB","WNBA","NFL","NBA"];
 
 export default function SportsMenu({ activeSport, onSportChange, darkMode, setDarkMode, onLogout }) {
   const [musicPlaying, setMusicPlaying] = useState(false);

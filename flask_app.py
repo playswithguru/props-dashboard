@@ -148,6 +148,10 @@ def get_nba_props():
                 "Confidence": round(conf, 2),
                 "RiskNote": row.get("Risk Note"),
                 "AI Commentary": row.get("AI Commentary"),
+                "GuruPick": row.get("Guru Pick"),
+                "GuruMagic": row.get("Guru Magic"),
+                "Sport": row.get("Sport"),
+                "IsGuruPick": row.get("IsGuru Pick"),
                 "WinProbability": row.get("WinProbability", 0),
                 "GameTime": str(row.get("GameTime", "")) if pd.notna(row.get("GameTime")) else "",
                 "Home/Away": row.get("Home/Away", "home"),
@@ -200,12 +204,19 @@ def get_mlb_props():
             mp = row.get("Momentum Pattern","")
             cm = row.get("Confirmed Momentum","")
             ac = row.get("AI Commentary","")
+            sport = row.get("Sport","")
+            guruPick = row.get("Guru Pick","")
+            guruMagic = row.get("Guru Magic","")
+            isguruPick = row.get("IsGuru Pick","")
             start = row.get("GameTime", "")
             ha = row.get("Home/Away", "home")
             last5_vs_Season = row.get("Last5_vs_Season", None)
             last10_vs_Season = row.get("Last10_vs_Season", None)
             ptype = playerType
             final_projection = row.get("Final Projection", row.get("FinalAdjustedScore", None))
+            pitcher = row.get("opp_pitcher", "") 
+            era = row.get("opp_era", None)
+            hand = row.get("opp_hand", "")
 
             if not ptype:
                 if player.lower() in last10_batters_df["player"].str.lower().values:
@@ -228,7 +239,7 @@ def get_mlb_props():
                     "Stolen Bases": "stolenbases", "Walks": "baseonballs", "Hits Allowed": "hits",
                     "Earned Runs Allowed": "runs", "Doubles": "doubles", "Triples": "triples",
                     "Singles": "singles", "Hitter Strikeouts": "strikeouts", "Pitching Outs": "outs",
-                    "Pitches Thrown": "numberofpitches"
+                    "Pitches Thrown": "numberofpitches", "Walks Allowed": "baseonballs"
                 }
                 stat_col = stat_map.get(prop_type)
 
@@ -273,18 +284,25 @@ def get_mlb_props():
                 "GuruPotential": guruP,
                 "MomentumTag": momentumT,
                 "ZGuruTag":zgTag,
-                "Guru Conflict": gc,
-                "Lean Direction": ld,
-                "Momentum Pattern": mp,
-                "Confirmed Momentum": cm,
+                "GuruConflict": gc,
+                "LeanDirection": ld,
+                "MomentumPattern": mp,
+                "ConfirmedMomentum": cm,
                 "AI Commentary": ac,
+                "Sport": sport,
+                "GuruPick": guruPick,
+                "GuruMagic": guruMagic,
+                "IsGuruPick": isguruPick,
                 "GameTime": start,
                 "Home/Away": ha,
                 "Matchup": row.get("Matchup", f"{team} vs {opponent}"),
                 "Final Projection": final_projection,
                 "Last10Stats": last10stats,
                 "Last5_vs_Season": last5_vs_Season,
-                "Last10_vs_Season": last10_vs_Season
+                "Last10_vs_Season": last10_vs_Season,
+                "opp_pitcher": pitcher,
+                "opp_era": era,
+                "opp_hand": hand
 
             })
 
@@ -293,27 +311,35 @@ def get_mlb_props():
         print(f"❌ Error loading MLB props: {e}")
         return jsonify({"error": str(e)})
 
+
 @app.route("/generate-lineups", methods=["POST"])
 def generate_lineups_api():
     try:
         print("🚀 /generate-lineups endpoint hit")
         config = request.get_json()
-        df = pd.read_excel(NBA_FILE_PATH, sheet_name="All_Picks")
+        filter_sports = config.get("sports", [])
 
-        home_away = config.get("homeAway", "")
-        filter_tags = config.get("filterTags", [])
-        filter_games = config.get("filterGames", [])
+        if not filter_sports:
+            raise ValueError("No sports specified in request.")
 
-        if home_away.lower() in ["home", "away"]:
-            df = df[df["Home/Away"] == home_away.lower()]
+        # ✅ Load only the requested sport files
+        dfs = []
+        for sport in filter_sports:
+            sport_upper = sport.upper()
+            if sport_upper == "NBA":
+                df = pd.read_excel(NBA_FILE_PATH, sheet_name="All_Picks")
+            elif sport_upper == "MLB":
+                df = pd.read_excel(MLB_FILE_PATH, sheet_name="All_Picks")
+            else:
+                print(f"⚠️ Unsupported sport requested: {sport}")
+                continue
+            dfs.append(df)
 
-        if filter_tags:
-            df = df[df["Tag"].isin(filter_tags)]
+        if not dfs:
+            raise ValueError("No valid data loaded for selected sports.")
 
-        if filter_games:
-            df["Game"] = df["Team"] + " vs " + df["Opponent"]
-            df = df[df["Game"].isin(filter_games)]
-
+        # ✅ Combine and proceed
+        df = pd.concat(dfs, ignore_index=True)
         lineups = generate_lineups_from_config(config, df)
         print("✅ Lineups generated:", lineups[:1])
         return jsonify(lineups)
@@ -322,5 +348,8 @@ def generate_lineups_api():
         print(f"❌ Error generating lineups: {e}")
         return jsonify({"error": str(e)}), 500
 
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5050)
+
