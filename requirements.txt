@@ -4,7 +4,7 @@ appdirs==1.4.4
 appnope==0.1.4
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
-arrow==1.3.0
+#arrow==1.3.0
 asttokens==2.4.1
 async-lru==2.0.4
 attrs==23.2.0
@@ -29,7 +29,7 @@ Deprecated==1.2.18
 et_xmlfile==2.0.0
 executing==2.0.1
 fastjsonschema==2.19.1
-fastparquet==2024.11.0
+#fastparquet==2024.11.0
 Flask==3.1.0
 flask-cors==5.0.1
 fonttools==4.57.0
@@ -148,7 +148,7 @@ tzdata==2024.1
 Unidecode==1.4.0
 uri-template==1.3.0
 urllib3==2.2.1
-viola==0.3.8
+#viola==0.3.8
 wcwidth==0.2.13
 webcolors==1.13
 webdriver-manager==4.0.2
